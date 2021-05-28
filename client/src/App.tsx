@@ -49,6 +49,9 @@ function App() {
       }}
     >
       <Switch>
+        <Route path='/reset-password/:token'>
+          <AuthenticationPage setLoggedIn={setLoggedIn} />
+        </Route>
         <Route path='/document/:id'>
           {loggedIn === true ? (
             <TextEditor />

@@ -29,6 +29,7 @@ import IServerResponse from './interfaces/IServerResponse';
 import IHistoryState from './interfaces/IHistoryState';
 import AlertMessage from './AlertMessage';
 import AppContext from './AppContext';
+import IParams from './interfaces/IParams';
 
 const SAVE_INTERVAL_MS: number = 10000;
 
@@ -43,10 +44,6 @@ const TOOLBAR_OPTIONS = [
   ['image', 'blockquote', 'code-block'],
   ['clean'],
 ];
-
-type ParamType = {
-  id: string;
-};
 
 const shareable = async (
   documentId: string,
@@ -64,7 +61,7 @@ const shareable = async (
 };
 
 const TextEditor: React.FC = () => {
-  const { id: documentId } = useParams<ParamType>();
+  const { id: documentId } = useParams<IParams>();
   const [socket, setSocket] = useState<Socket>();
   const [quill, setQuill] = useState<Quill>();
   const [saveTitle, setSaveTitle] = useState<boolean>(true);

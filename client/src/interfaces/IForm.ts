@@ -1,6 +1,6 @@
 export default interface IForm {
-  email: string;
+  email?: string;
   fullname?: string;
-  password: string;
+  password?: string;
   confirmPassword?: string;
 }

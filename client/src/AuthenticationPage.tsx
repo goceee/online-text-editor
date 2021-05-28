@@ -24,6 +24,8 @@ import AlertMessage from './AlertMessage';
 import IForm from './interfaces/IForm';
 import IServerResponseData from './interfaces/IServerResponseData';
 import AppContext from './AppContext';
+import { useHistory, useParams } from 'react-router';
+import IParams from './interfaces/IParams';
 
 interface Props {
   setLoggedIn: Dispatch<SetStateAction<boolean | null>>;
@@ -47,6 +49,13 @@ const defaultTextFieldProps: TextFieldProps = {
 const AuthenticationPage = ({ setLoggedIn }: Props) => {
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [register, setRegister] = useState<boolean>(false);
+  const [forgotPassword, setForgotPassword] = useState<boolean>(false);
+  const resetPassword = useParams<IParams>();
+  const history = useHistory();
+  const isResetPassword = useMemo(
+    () => Object.keys(resetPassword).length !== 0,
+    [resetPassword]
+  );
   const { setDocuments, setUserID, setAlertSettings, alertSettings } =
     useContext(AppContext);
   const matches = useMediaQuery<boolean>('(max-width:380px)');
@@ -55,33 +64,39 @@ const AuthenticationPage = ({ setLoggedIn }: Props) => {
   const validationSchema = useMemo(
     () =>
       object({
-        email: string()
-          .trim()
-          .email('Must be a valid email')
-          .required('This field is required'),
-        fullname: register
+        email: !isResetPassword
           ? string()
               .trim()
-              .min(5, 'Too short')
+              .email('Must be a valid email')
               .required('This field is required')
           : string(),
-        password: string()
-          .trim()
-          .min(5, 'Password must be at least 5 characters')
-          .required('This field is required'),
-        confirmPassword: register
+        fullname:
+          register && !forgotPassword
+            ? string()
+                .trim()
+                .min(5, 'Too short')
+                .required('This field is required')
+            : string(),
+        password: !forgotPassword
           ? string()
-              .test(
-                'passwords-match',
-                'Passwords must match',
-                function (value) {
-                  return this.parent.password === value;
-                }
-              )
+              .trim()
+              .min(5, 'Password must be at least 5 characters')
               .required('This field is required')
           : string(),
+        confirmPassword:
+          (register && !forgotPassword) || isResetPassword
+            ? string()
+                .test(
+                  'passwords-match',
+                  'Passwords must match',
+                  function (value) {
+                    return this.parent.password === value;
+                  }
+                )
+                .required('This field is required')
+            : string(),
       }),
-    [register]
+    [register, forgotPassword, isResetPassword]
   );
 
   const handlePasswordVisibility = () => {
@@ -112,7 +127,13 @@ const AuthenticationPage = ({ setLoggedIn }: Props) => {
           </Typography>
         </Box>
         <Typography component='h1' variant='h5'>
-          {!register ? 'Sign in' : 'Create an account'}
+          {isResetPassword
+            ? 'Reset password'
+            : forgotPassword
+            ? 'Forgot password'
+            : !register
+            ? 'Sign in'
+            : 'Create an account'}
         </Typography>
         <Formik
           initialValues={{ ...initialFormValues }}
@@ -121,11 +142,22 @@ const AuthenticationPage = ({ setLoggedIn }: Props) => {
             { setSubmitting, resetForm }: FormikHelpers<IForm>
           ): void => {
             setAlertSettings({ ...alertSettings, showAlert: false });
+
             setTimeout(async () => {
-              const data: IForm = register
+              const data: IForm = isResetPassword
+                ? { password: values.password }
+                : forgotPassword
+                ? { email: values.email }
+                : register
                 ? values
                 : { email: values.email, password: values.password };
-              const requestPath: string = register ? 'create' : 'login';
+              const requestPath: string = isResetPassword
+                ? `reset-password/${resetPassword.token}`
+                : forgotPassword
+                ? 'forgot-password'
+                : register
+                ? 'create'
+                : 'login';
               try {
                 const response: Response = await fetch(`/${requestPath}`, {
                   method: 'POST',
@@ -141,7 +173,7 @@ const AuthenticationPage = ({ setLoggedIn }: Props) => {
                     setUserID(responseJSON.data.userId);
                     setDocuments(responseJSON.data.documents);
                     setLoggedIn(true);
-                  } else {
+                  } else if (requestPath === 'create') {
                     setRegister(false);
                     setAlertSettings({
                       severityType: 'success',
@@ -150,6 +182,23 @@ const AuthenticationPage = ({ setLoggedIn }: Props) => {
                     });
                     emailRef.current?.focus();
                     resetForm();
+                  } else if (isResetPassword) {
+                    history.push('/');
+                    setAlertSettings({
+                      severityType: 'success',
+                      alertMessage: responseJSON.message,
+                      showAlert: true,
+                    });
+                  } else {
+                    setAlertSettings({
+                      severityType: 'success',
+                      alertMessage: responseJSON.message,
+                      showAlert: true,
+                    });
+                    setRegister(false);
+                    setForgotPassword(false);
+                    resetForm();
+                    emailRef.current?.focus();
                   }
                 } else {
                   setAlertSettings({
@@ -190,22 +239,25 @@ const AuthenticationPage = ({ setLoggedIn }: Props) => {
             >
               <Container
                 style={{
+                  minWidth: !matches ? '370px' : '',
                   maxWidth: '370px',
                   padding: '20px 0',
                 }}
               >
-                <TextField
-                  {...defaultTextFieldProps}
-                  name='email'
-                  label='Email'
-                  autoFocus
-                  inputRef={emailRef}
-                  value={values.email}
-                  onChange={handleChange}
-                  error={touched.email && Boolean(errors.email)}
-                  helperText={<ErrorMessage name='email' />}
-                />
-                {!register ? null : (
+                {!isResetPassword && (
+                  <TextField
+                    {...defaultTextFieldProps}
+                    name='email'
+                    label='Email'
+                    autoFocus
+                    inputRef={emailRef}
+                    value={values.email}
+                    onChange={handleChange}
+                    error={touched.email && Boolean(errors.email)}
+                    helperText={<ErrorMessage name='email' />}
+                  />
+                )}
+                {!register || forgotPassword ? null : (
                   <TextField
                     {...defaultTextFieldProps}
                     name='fullname'
@@ -216,26 +268,33 @@ const AuthenticationPage = ({ setLoggedIn }: Props) => {
                     helperText={<ErrorMessage name='fullname' />}
                   />
                 )}
-                <TextField
-                  {...defaultTextFieldProps}
-                  name='password'
-                  label='Password'
-                  type={!showPassword ? 'password' : 'text'}
-                  value={values.password}
-                  onChange={handleChange}
-                  InputProps={{
-                    endAdornment: register ? null : (
-                      <InputAdornment position='end'>
-                        <IconButton onClick={handlePasswordVisibility}>
-                          {showPassword ? <Visibility /> : <VisibilityOff />}
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  }}
-                  error={touched.password && Boolean(errors.password)}
-                  helperText={<ErrorMessage name='password' />}
-                />
-                {!register ? null : (
+                {!forgotPassword && (
+                  <TextField
+                    {...defaultTextFieldProps}
+                    name='password'
+                    label='Password'
+                    type={!showPassword ? 'password' : 'text'}
+                    value={values.password}
+                    onChange={handleChange}
+                    InputProps={{
+                      endAdornment:
+                        register || isResetPassword ? null : (
+                          <InputAdornment position='end'>
+                            <IconButton onClick={handlePasswordVisibility}>
+                              {showPassword ? (
+                                <Visibility />
+                              ) : (
+                                <VisibilityOff />
+                              )}
+                            </IconButton>
+                          </InputAdornment>
+                        ),
+                    }}
+                    error={touched.password && Boolean(errors.password)}
+                    helperText={<ErrorMessage name='password' />}
+                  />
+                )}
+                {((register && !forgotPassword) || isResetPassword) && (
                   <TextField
                     {...defaultTextFieldProps}
                     name='confirmPassword'
@@ -250,17 +309,37 @@ const AuthenticationPage = ({ setLoggedIn }: Props) => {
                   />
                 )}
 
-                <Box display='flex' justifyContent='flex-end'>
-                  <Button
-                    size='small'
-                    onClick={() => {
-                      handleReset();
-                      switchToRegister();
-                    }}
+                {!isResetPassword && (
+                  <Box
+                    display='flex'
+                    justifyContent={register ? 'flex-end' : 'space-between'}
                   >
-                    {register ? 'Sign in' : 'Create an account'}
-                  </Button>
-                </Box>
+                    {!register ? (
+                      <Button
+                        size='small'
+                        onClick={() => {
+                          handleReset();
+                          setForgotPassword(true);
+                          switchToRegister();
+                          emailRef.current?.focus();
+                        }}
+                      >
+                        Forgot password
+                      </Button>
+                    ) : null}
+                    <Button
+                      size='small'
+                      onClick={() => {
+                        handleReset();
+                        switchToRegister();
+                        setForgotPassword(false);
+                        emailRef.current?.focus();
+                      }}
+                    >
+                      {register ? 'Sign in' : 'Create an account'}
+                    </Button>
+                  </Box>
+                )}
               </Container>
               <Button
                 disabled={isSubmitting}
