@@ -64,7 +64,7 @@ router.post(
       }
       res.send({ success: false, message: 'Document not shareable/found' });
     } catch (e) {
-      res.status(500).send({ success: false, message: e });
+      res.status(500).send({ success: false, message: e.message });
     }
   }
 );

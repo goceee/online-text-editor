@@ -5,6 +5,7 @@ interface IUser extends Document {
   fullname: string;
   email: string;
   password: string;
+  resetPasswordToken: string | undefined;
   documents: IDocumentObject[];
 }
 

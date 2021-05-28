@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import JWT from 'jsonwebtoken';
 import config from '../helpers/config';
+import transporter from '../helpers/emailClient';
 import IJWTData from '../interfaces/IJWTData';
 import IRequestBody from '../interfaces/IRequestBody';
 import IUserModel from '../interfaces/IUser';
@@ -69,7 +70,7 @@ router.get(
         });
         return;
       } catch (e) {
-        res.send({ success: false, message: e });
+        res.send({ success: false, message: e.message });
       }
     }
     res.send({ success: false, message: 'Login unsuccessful' });
@@ -84,44 +85,71 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
       const payload = {
         id: user.id,
       };
-      const token = JWT.sign(payload, `${config.secret}${user.id}`, {
+      const token = JWT.sign(payload, `${config.secret}${user.password}`, {
         expiresIn: '15m',
       });
-      const link = `http://localhost:3000/reset-password/${user.id}/${token}`;
-      console.log(link);
-      res.send({ success: true, message: 'Password reset link has been sent' });
-    } else {
-      res.send({ success: false, message: 'User not found' });
+      await user.updateOne({ resetPasswordToken: token });
+
+      const link = `http://localhost:3000/reset-password/${token}`;
+      transporter.sendMail(
+        {
+          from: '"Fred Foo 👻" <foo@example.com>',
+          to: 'bar@example.com, bar@example.com',
+          subject: 'Link to reset your password',
+          html: `<h3>Click on the link to reset your password</h3>
+                <a href=${link}>${link}</a>`,
+        },
+        (err) => {
+          if (err) {
+            res.status(500).send({
+              success: false,
+              message: 'Reset link has not been sent, please try again later',
+            });
+            return;
+          }
+          res.send({
+            success: true,
+            message: 'Password reset link has been sent',
+          });
+        }
+      );
+      return;
     }
+    res.send({ success: false, message: 'User not found' });
   } catch (e) {
-    res.status(500).send({ success: false, message: e });
+    res.status(500).send({ success: false, message: e.message });
   }
 });
 
-router.post(
-  '/reset-password/:id/:token',
-  async (req: Request, res: Response) => {
-    const { id, token } = req.params;
-    const newPassword: string = req.body.password;
-    try {
-      const tokenData = <IJWTData>JWT.verify(token, `${config.secret}${id}`);
-      const user: IUserModel | null = await User.findById(tokenData.id);
-      if (user) {
-        if (user.checkPassword(newPassword))
-          res.send({
-            success: false,
-            message: 'New password cannot be the same as the old one',
-          });
-        user.password = newPassword;
-        await user.save();
-        res.send({ success: true, message: 'Password successfully changed' });
-      } else {
-        res.status(500).send({ success: false, message: 'User not found' });
+router.post('/reset-password/:token', async (req: Request, res: Response) => {
+  const { token } = req.params;
+  const newPassword: string = req.body.password;
+  try {
+    const user: IUserModel | null = await User.findOne({
+      resetPasswordToken: token,
+    });
+    if (user) {
+      JWT.verify(token, `${config.secret}${user.password}`);
+      if (await user.checkPassword(newPassword)) {
+        res.send({
+          success: false,
+          message: 'New password cannot be the same as the old one',
+        });
+        return;
       }
-    } catch (e) {
-      res.status(500).send({ success: false, message: e });
+      user.password = newPassword;
+      user.resetPasswordToken = undefined;
+      await user.save();
+      res.send({ success: true, message: 'Password successfully changed' });
+    } else {
+      res.status(500).send({
+        success: false,
+        message: 'Reset password token expired, please request a new one',
+      });
     }
+  } catch (e) {
+    res.status(500).send({ success: false, message: e.message });
   }
-);
+});
 
 export default router;
